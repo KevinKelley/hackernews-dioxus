@@ -51,30 +51,28 @@ pub struct StoryItem {
     pub r#type: String,
 }
 
-
-// #[inline_props]
-// fn StoryListing(cx: Scope, story: StoryItem) -> Element {
-//     let StoryItem {
-//         title, 
-//         by,
-//         score,
-//         time,
-//         kids,
-//         ..
-//     } = story;
-
-//     let comments = kids.len();
-
-//     render! {
-//         div {
-//             padding: "0.5rem",
-//             position: "relative",
-//             "{title} by {by} ({score}) {time} {comments}"
-//         }
-//     }
-// }
-
 pub fn App(cx: Scope) -> Element {
+    use_shared_state_provider(cx, || PreviewState::Unset);
+    
+    cx.render(rsx! {
+        div {
+            display: "flex",
+            flex_direction: "row",
+            width: "100%",
+            div {
+                width: "50%",
+                Stories {}
+            }
+            div {
+                width: "50%",
+                Preview {}
+            }
+        }
+    })
+}
+
+// New
+fn Stories(cx: Scope) -> Element {
     render! {
         StoryListing {
             story: StoryItem {
@@ -85,7 +83,7 @@ pub fn App(cx: Scope) -> Element {
                 by: "Author".to_string(),
                 score: 0,
                 descendants: 0,
-                time: Utc::now(),
+                time: chrono::Utc::now(),
                 kids: vec![],
                 r#type: "".to_string(),
             }
@@ -94,8 +92,82 @@ pub fn App(cx: Scope) -> Element {
 }
 
 
+// New
+#[derive(Clone, Debug)]
+enum PreviewState {
+    Unset,
+    Loading,
+    Loaded(StoryPageData),
+}
+
+// New
+fn Preview(cx: Scope) -> Element {
+    // let preview_state = PreviewState::Unset;
+    // New
+    let preview_state = use_shared_state::<PreviewState>(cx)?;
+
+    // New
+    match &*preview_state.read() {
+    //match preview_state {
+        PreviewState::Unset => render! {
+            "Hover over a story to preview it here"
+        },
+        PreviewState::Loading => render! {
+            "Loading..."
+        },
+        PreviewState::Loaded(story) => {
+            let title = &story.item.title;
+            let url = story.item.url.as_deref().unwrap_or_default();
+            let text = story.item.text.as_deref().unwrap_or_default();
+            render! {
+                div {
+                    padding: "0.5rem",
+                    div {
+                        font_size: "1.5rem",
+                        a {
+                            href: "{url}",
+                            "{title}"
+                        }
+                    }
+                    div {
+                        dangerous_inner_html: "{text}",
+                    }
+                    for comment in &story.comments {
+                        Comment { comment: comment.clone() }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// NEW
+#[inline_props]
+fn Comment(cx: Scope, comment: Comment) -> Element<'a> {
+    render! {
+        div {
+            padding: "0.5rem",
+            div {
+                color: "gray",
+                "by {comment.by}"
+            }
+            div {
+                dangerous_inner_html: "{comment.text}"
+            }
+            for kid in &comment.sub_comments {
+                Comment { comment: kid.clone() }
+            }
+        }
+    }
+}
+
+
 #[inline_props]
 fn StoryListing(cx: Scope, story: StoryItem) -> Element {
+
+    // New
+    let preview_state = use_shared_state::<PreviewState>(cx).unwrap();
+
     let StoryItem {
         title,
         url,
@@ -130,6 +202,14 @@ fn StoryListing(cx: Scope, story: StoryItem) -> Element {
         div {
             padding: "0.5rem",
             position: "relative",
+            onmouseenter: move |_event| {
+                // NEW
+                // set the preview state to this story
+                *preview_state.write() = PreviewState::Loaded(StoryPageData {
+                    item: story.clone(),
+                    comments: vec![],
+                });
+            },
             div {
                 font_size: "1.5rem",
                 a {
