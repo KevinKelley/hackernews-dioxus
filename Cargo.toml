@@ -1,0 +1,21 @@
+[package]
+name = "hackernews_dyoxus"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-recursion = "1.0.5"
+chrono = { version = "0.4.31", features = ["serde"] }
+dioxus = "0.4.0"
+dioxus-fullstack = "0.4.1"
+futures = "0.3.29"
+reqwest = { version = "0.11.22", features = ["json"] }
+serde = { version = "1.0.190", features = ["derive"] }
+serde_json = "1.0.107"
+
+[features]
+default = []
+ssr = ["dioxus-fullstack/axum"]
+web = ["dioxus-fullstack/web"]
