@@ -71,25 +71,35 @@ pub fn App(cx: Scope) -> Element {
     })
 }
 
-// New
 fn Stories(cx: Scope) -> Element {
-    render! {
-        StoryListing {
-            story: StoryItem {
-                id: 0,
-                title: "hello hackernews".to_string(),
-                url: None,
-                text: None,
-                by: "Author".to_string(),
-                score: 0,
-                descendants: 0,
-                time: chrono::Utc::now(),
-                kids: vec![],
-                r#type: "".to_string(),
+    // Fetch the top 10 stories on Hackernews
+    let stories = use_future(cx, (), |_| get_stories(10));
+
+    // check if the future is resolved
+    match stories.value() {
+        Some(Ok(list)) => {
+            // if it is, render the stories
+            render! {
+                div {
+                    // iterate over the stories with a for loop
+                    for story in list {
+                        // render every story with the StoryListing component
+                        StoryListing { story: story.clone() }
+                    }
+                }
             }
+        }
+        Some(Err(err)) => {
+            // if there was an error, render the error
+            render! {"An error occurred while fetching stories {err}"}
+        }
+        None => {
+            // if the future is not resolved yet, render a loading message
+            render! {"Loading items"}
         }
     }
 }
+
 
 
 // New
@@ -161,6 +171,23 @@ fn Comment(cx: Scope, comment: Comment) -> Element<'a> {
     }
 }
 
+// New
+async fn resolve_story(
+    full_story: UseRef<Option<StoryPageData>>,
+    preview_state: UseSharedState<PreviewState>,
+    story_id: i64,
+) {
+    if let Some(cached) = &*full_story.read() {
+        *preview_state.write() = PreviewState::Loaded(cached.clone());
+        return;
+    }
+
+    *preview_state.write() = PreviewState::Loading;
+    if let Ok(story) = get_story(story_id).await {
+        *preview_state.write() = PreviewState::Loaded(story.clone());
+        *full_story.write() = Some(story);
+    }
+}
 
 #[inline_props]
 fn StoryListing(cx: Scope, story: StoryItem) -> Element {
@@ -178,6 +205,8 @@ fn StoryListing(cx: Scope, story: StoryItem) -> Element {
         id,
         ..
     } = story;
+    // New
+    let full_story = use_ref(cx, || None);
 
     let url = url.as_deref().unwrap_or_default();
     let hostname = url
@@ -203,12 +232,9 @@ fn StoryListing(cx: Scope, story: StoryItem) -> Element {
             padding: "0.5rem",
             position: "relative",
             onmouseenter: move |_event| {
-                // NEW
-                // set the preview state to this story
-                *preview_state.write() = PreviewState::Loaded(StoryPageData {
-                    item: story.clone(),
-                    comments: vec![],
-                });
+                // New
+                // If you return a future from an event handler, it will be run automatically
+                resolve_story(full_story.clone(), preview_state.clone(), *id)
             },
             div {
                 font_size: "1.5rem",
@@ -261,3 +287,70 @@ fn main() {
 }
 
 
+//////////////////////////////////////////////////////////////////
+/// hackernews api
+/// 
+// Define the Hackernews API
+use futures::future::join_all;
+
+pub static BASE_API_URL: &str = "https://hacker-news.firebaseio.com/v0/";
+pub static ITEM_API: &str = "item/";
+pub static USER_API: &str = "user/";
+const COMMENT_DEPTH: i64 = 2;
+
+pub async fn get_story_preview(id: i64) -> Result<StoryItem, reqwest::Error> {
+    let url = format!("{}{}{}.json", BASE_API_URL, ITEM_API, id);
+    reqwest::get(&url).await?.json().await
+}
+
+pub async fn get_stories(count: usize) -> Result<Vec<StoryItem>, reqwest::Error> {
+    let url = format!("{}topstories.json", BASE_API_URL);
+    let stories_ids = &reqwest::get(&url).await?.json::<Vec<i64>>().await?[..count];
+
+    let story_futures = stories_ids[..usize::min(stories_ids.len(), count)]
+        .iter()
+        .map(|&story_id| get_story_preview(story_id));
+    let stories = join_all(story_futures)
+        .await
+        .into_iter()
+        .filter_map(|story| story.ok())
+        .collect();
+    Ok(stories)
+}
+
+pub async fn get_story(id: i64) -> Result<StoryPageData, reqwest::Error> {
+    let url = format!("{}{}{}.json", BASE_API_URL, ITEM_API, id);
+    let mut story = reqwest::get(&url).await?.json::<StoryPageData>().await?;
+    let comment_futures = story.item.kids.iter().map(|&id| get_comment(id));
+    let comments = join_all(comment_futures)
+        .await
+        .into_iter()
+        .filter_map(|c| c.ok())
+        .collect();
+
+    story.comments = comments;
+    Ok(story)
+}
+
+#[async_recursion::async_recursion(?Send)]
+pub async fn get_comment_with_depth(id: i64, depth: i64) -> Result<Comment, reqwest::Error> {
+    let url = format!("{}{}{}.json", BASE_API_URL, ITEM_API, id);
+    let mut comment = reqwest::get(&url).await?.json::<Comment>().await?;
+    if depth > 0 {
+        let sub_comments_futures = comment
+            .kids
+            .iter()
+            .map(|story_id| get_comment_with_depth(*story_id, depth - 1));
+        comment.sub_comments = join_all(sub_comments_futures)
+            .await
+            .into_iter()
+            .filter_map(|c| c.ok())
+            .collect();
+    }
+    Ok(comment)
+}
+
+pub async fn get_comment(comment_id: i64) -> Result<Comment, reqwest::Error> {
+    let comment = get_comment_with_depth(comment_id, COMMENT_DEPTH).await?;
+    Ok(comment)
+}
