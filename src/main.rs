@@ -2,6 +2,7 @@
 use dioxus::prelude::*;
 use dioxus_fullstack::prelude::*;
 
+// Define the Hackernews types
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -51,30 +52,29 @@ pub struct StoryItem {
 }
 
 
-#[inline_props]
-fn StoryListing(cx: Scope, story: StoryItem) -> Element {
-    let StoryItem {
-        title, 
-        by,
-        score,
-        time,
-        kids,
-        ..
-    } = story;
+// #[inline_props]
+// fn StoryListing(cx: Scope, story: StoryItem) -> Element {
+//     let StoryItem {
+//         title, 
+//         by,
+//         score,
+//         time,
+//         kids,
+//         ..
+//     } = story;
 
-    let comments = kids.len();
+//     let comments = kids.len();
 
-    render! {
-        div {
-            padding: "0.5rem",
-            position: "relative",
-            "{title} by {by} ({score}) {time} {comments}"
-        }
-    }
-}
+//     render! {
+//         div {
+//             padding: "0.5rem",
+//             position: "relative",
+//             "{title} by {by} ({score}) {time} {comments}"
+//         }
+//     }
+// }
 
-fn app(cx: Scope) -> Element {
-
+pub fn App(cx: Scope) -> Element {
     render! {
         StoryListing {
             story: StoryItem {
@@ -85,23 +85,99 @@ fn app(cx: Scope) -> Element {
                 by: "Author".to_string(),
                 score: 0,
                 descendants: 0,
-                time: chrono::Utc::now(),
+                time: Utc::now(),
                 kids: vec![],
                 r#type: "".to_string(),
             }
         }
     }
-
-    //  let mut count = use_state(cx, || 0);
-    // render! {
-    //     h1 { "High-Five counter: {count}" }
-    //     button { onclick: move |_| count += 1, "Up high!" }
-    //     button { onclick: move |_| count -= 1, "Down low!" }
-    // }
 }
 
+
+#[inline_props]
+fn StoryListing(cx: Scope, story: StoryItem) -> Element {
+    let StoryItem {
+        title,
+        url,
+        by,
+        score,
+        time,
+        kids,
+        id,
+        ..
+    } = story;
+
+    let url = url.as_deref().unwrap_or_default();
+    let hostname = url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_start_matches("www.");
+    // println!("url: {}", url);
+    // println!("hostname: {}", "hostname");
+    let score = format!("{score} {}", if *score == 1 { " point" } else { " points" });
+    let comments = format!(
+        "{} {}",
+        kids.len(),
+        if kids.len() == 1 {
+            " comment"
+        } else {
+            " comments"
+        }
+    );
+    let time = time.format("%D %l:%M %p");
+
+    cx.render(rsx! {
+        div {
+            padding: "0.5rem",
+            position: "relative",
+            div {
+                font_size: "1.5rem",
+                a {
+                    href: url,
+                    "{title}"
+                }
+                a {
+                    color: "gray",
+                    href: "https://news.ycombinator.com/from?site={hostname}",
+                    text_decoration: "none",
+                    " ({hostname})"
+                }
+            }
+            div {
+                display: "flex",
+                flex_direction: "row",
+                color: "gray",
+                div {
+                    "{score}"
+                }
+                div {
+                    padding_left: "0.5rem",
+                    "by {by}"
+                }
+                div {
+                    padding_left: "0.5rem",
+                    "{time}"
+                }
+                div {
+                    padding_left: "0.5rem",
+                    "{comments}"
+                }
+            }
+        }
+    })
+}
+
+
+//     //  let mut count = use_state(cx, || 0);
+//     // render! {
+//     //     h1 { "High-Five counter: {count}" }
+//     //     button { onclick: move |_| count += 1, "Up high!" }
+//     //     button { onclick: move |_| count -= 1, "Down low!" }
+//     // }
+// }
+
 fn main() {
-    LaunchBuilder::new(app).launch();
+    LaunchBuilder::new(App).launch();
 }
 
 
